@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AIC Picture Caller</title>
+<style>
+  :root{
+    --bg:#0b0f16; --panel:#141b26; --panel2:#10151d; --fg:#e2e9f4; --muted:#90a2bd;
+    --accent:#ffcf3f; --cyan:#37d2da; --border:#283648; --field:#0a0e14;
+    --scope:#0b1320;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px; line-height:1.45; -webkit-text-size-adjust:100%;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace}
+  header{background:#0c1119; border-bottom:2px solid var(--accent); padding:10px 16px;
+    display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  header h1{font-size:18px; letter-spacing:.16em; margin:0; color:var(--accent); font-weight:700}
+  header .sub{color:var(--muted); font-size:12px; letter-spacing:.04em}
+  header .spacer{flex:1}
+  header .src{color:var(--muted); font-size:12px; text-decoration:none; border:1px solid var(--border);
+    padding:4px 9px; border-radius:6px}
+  header .src:hover{border-color:var(--accent); color:var(--fg)}
+
+  .tabs{display:flex; gap:4px; padding:10px 16px 0}
+  .tab{background:var(--panel2); color:var(--muted); border:1px solid var(--border); border-bottom:none;
+    padding:8px 16px; border-radius:8px 8px 0 0; cursor:pointer; font-weight:600; letter-spacing:.03em}
+  .tab.active{background:var(--panel); color:var(--accent); border-color:var(--accent)}
+
+  main{padding:0 16px 28px}
+  .wrap{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:start;
+    border:1px solid var(--border); border-top:none; background:var(--panel); border-radius:0 0 10px 10px; padding:16px}
+  @media (max-width:880px){ .wrap{grid-template-columns:1fr} }
+
+  fieldset{border:1px solid var(--border); border-radius:9px; margin:0 0 14px; padding:12px 14px; background:var(--panel2)}
+  legend{color:var(--accent); font-weight:700; font-size:12px; letter-spacing:.08em; padding:0 6px}
+  label{display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:13px}
+  .row{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:6px 0}
+  input[type=text], input[type=number], select{
+    background:var(--field); color:var(--fg); border:1px solid var(--border); border-radius:6px;
+    padding:6px 8px; font:inherit}
+  input[type=number]{width:62px}
+  input[type=text]{width:120px}
+  input[type=checkbox]{accent-color:var(--accent); width:16px; height:16px}
+  input[type=range]{accent-color:var(--accent); width:120px; vertical-align:middle}
+  .btns{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+  button{background:#22303f; color:var(--fg); border:1px solid var(--border); border-radius:7px;
+    padding:9px 14px; font:inherit; font-weight:600; cursor:pointer}
+  button:hover{background:#2d3f54}
+  button.accent{background:var(--accent); color:#10151d; border-color:var(--accent)}
+  button.accent:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.45; cursor:default}
+
+  .scope-wrap{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .scope-bar{display:flex; gap:14px; align-items:center; align-self:stretch; justify-content:flex-end}
+  canvas#hsi{background:var(--scope); border:1px solid var(--border); border-radius:10px; touch-action:none;
+    width:min(86vw,460px); height:min(86vw,460px)}
+
+  pre.out{background:var(--field); border:1px solid var(--border); border-radius:9px; padding:12px 14px;
+    white-space:pre-wrap; min-height:120px; margin:14px 0 0; font-size:13.5px; overflow:auto}
+
+  /* CAS view */
+  .cas-bar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px}
+  .cas-step{color:var(--accent); font-weight:700; letter-spacing:.05em; margin:2px 0 8px}
+  #casOut{min-height:340px; max-height:62vh}
+  #casOut .hdr{color:var(--accent); font-weight:700}
+  #casOut .aircrew{color:var(--cyan)}
+  #casOut .jtac{color:var(--accent)}
+  #casOut .lab{color:var(--muted)}
+  .hidden{display:none !important}
+  .hint{color:var(--muted); font-size:12px}
+  .status{color:var(--muted); font-size:12.5px; margin-top:10px; border-top:1px solid var(--border); padding-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>AIC&nbsp;&nbsp;PICTURE&nbsp;&nbsp;CALLER</h1>
+  <span class="sub">browser trainer · intercept pictures, SEAD, CAS</span>
+  <span class="spacer"></span>
+  <a class="src" id="srcLink" href="#" target="_blank" rel="noopener">View source</a>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-mode="A-A">Air-to-Air</div>
+  <div class="tab" data-mode="SEAD">SEAD</div>
+  <div class="tab" data-mode="CAS">CAS (12-step)</div>
+</div>
+
+<main>
+  <!-- ============ TRAINER (A-A / SEAD) ============ -->
+  <div class="wrap" id="view-trainer">
+    <div class="controls">
+      <fieldset>
+        <legend>Controller</legend>
+        <div class="row">
+          <label>Callsign <input type="text" id="callsign" value="Uzi 1"></label>
+          <label id="voiceWrap"><input type="checkbox" id="voice" checked> Voice</label>
+        </div>
+        <div class="row">
+          <label>Speech rate <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1"></label>
+          <span class="hint" id="rateVal">1.0&times;</span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Random trainer</legend>
+        <div class="row" id="typeRow">
+          <label>Picture
+            <select id="ptype">
+              <option>Any</option><option>SINGLE</option><option>AZIMUTH</option>
+              <option>RANGE</option><option>WALL</option><option>LADDER</option>
+              <option>VIC</option><option>CHAMPAGNE</option><option>ECHELON</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Groups <input type="number" id="nMin" value="2" min="1" max="10"></label>
+          <label>to <input type="number" id="nMax" value="3" min="1" max="10"></label>
+          <label>Range nm <input type="number" id="rMin" value="30" min="5" max="200" step="5"></label>
+          <label>to <input type="number" id="rMax" value="50" min="5" max="200" step="5"></label>
+        </div>
+        <div class="row" id="aaToggles">
+          <label><input type="checkbox" id="aspect"> Include aspect</label>
+          <label><input type="checkbox" id="flowHot" checked> Always flowing hot</label>
+        </div>
+        <div class="btns">
+          <button class="accent" id="btnRandom">Random + Speak</button>
+          <button id="btnRepeat">Repeat</button>
+          <button id="btnStop">Stop</button>
+        </div>
+        <p class="hint" id="gameHelp" style="margin:10px 0 0; line-height:1.5">
+          <strong style="color:var(--accent)">Game mode</strong> (on by default): you hear
+          the picture read aloud but the scope stays blank. Tap where you think each
+          contact is — one tap per group, in any order — and after the last tap the real
+          positions appear with your <em>average miss in nautical miles</em>. Press
+          “Random&nbsp;+&nbsp;Speak” for a fresh one. Untick Game mode to just see the picture.
+        </p>
+      </fieldset>
+
+      <pre class="out mono" id="callOut">Press “Random + Speak”. The call is read aloud; reveal the scope to check.</pre>
+    </div>
+
+    <div class="scope-wrap">
+      <div class="scope-bar">
+        <label><input type="checkbox" id="hdgUp" checked> Heading up</label>
+        <label><input type="checkbox" id="gameMode" checked> Game mode</label>
+        <button id="btnReveal">Show enemies</button>
+      </div>
+      <canvas id="hsi" width="460" height="460"></canvas>
+      <div class="hint" id="scopeHint">Bearing scope, bullseye-referenced. Heading-up to the fighter.</div>
+    </div>
+  </div>
+
+  <!-- ============ CAS ============ -->
+  <div class="wrap hidden" id="view-cas" style="grid-template-columns:1fr">
+    <div>
+      <div class="cas-bar">
+        <button class="accent" id="casNew">New mission</button>
+        <button id="casPrev">◀ Prev</button>
+        <button class="accent" id="casNext">Next step ▶</button>
+        <button id="casRepeat">Repeat</button>
+        <button id="casReveal">Reveal all</button>
+        <button id="casStop">Stop</button>
+        <label style="margin-left:auto"><input type="checkbox" id="casVoice" checked> Voice</label>
+        <label>Rate <input type="range" id="casRate" min="0.5" max="2" step="0.1" value="1"></label>
+        <span class="hint" id="casRateVal">1.0&times;</span>
+      </div>
+      <div class="cas-step" id="casStep">No mission loaded</div>
+      <pre class="out mono" id="casOut">Press “New mission”, then “Next step ▶” to walk the 12-step CAS exchange.
+
+Each step shows the radio call and the expected response — check-in, situation
+update, game plan, 9-line, remarks, readback, talk-on, IP inbound, IN,
+clearance, off, and BDA.</pre>
+    </div>
+  </div>
+
+  <div class="status" id="status">Ready.</div>
+</main>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
