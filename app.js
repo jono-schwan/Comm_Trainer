@@ -93,12 +93,14 @@ function enemyItems() {
   var items = [];
   if (mode === "SEAD" && state.sead) {
     state.sead.threats.forEach(function (t) {
-      items.push({ e: t.e, n: t.n, color: SEAD_COLOR[t.status], label: t.sam + " " + SEAD_VERB[t.status],
-                   stalk: null, wez: t.wez });
+      var tag = t.status !== "LAST KNOWN" ? " " + t.status : "";
+      items.push({ e: t.e, n: t.n, color: SEAD_COLOR[t.status] || "#ffd23b",
+                   label: t.sam + tag, name: t.sam + tag, stalk: null, wez: t.wez });
     });
   } else if (state.pic) {
     state.pic.groups.forEach(function (g) {
-      items.push({ e: g.e, n: g.n, color: "#ff5050", label: g.altK + "k", stalk: g.heading, wez: null });
+      items.push({ e: g.e, n: g.n, color: "#ff5050", label: g.altK + "k",
+                   name: g.label, stalk: g.heading, wez: null });
     });
   }
   return items;
@@ -213,32 +215,35 @@ function draw() {
     ctx.fillText(msg, cx, cy + R - 8);
   }
 
-  // game clicks + error lines
+  // game: X marks (and, once revealed, lines to each ASSIGNED contact)
   if (state.game) {
-    state.game.clicks.forEach(function (ge, i) {
-      var p = enToPolar(ge[0] - fe[0], ge[1] - fe[1]); var s = proj(p[0], p[1]);
-      ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(s[0] - 6, s[1] - 6); ctx.lineTo(s[0] + 6, s[1] + 6); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(s[0] - 6, s[1] + 6); ctx.lineTo(s[0] + 6, s[1] - 6); ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.font = "bold 11px monospace";
-      ctx.fillText(String(i + 1), s[0] + 8, s[1] - 8); ctx.textAlign = "center";
-      if (state.game.revealed) {
-        var pos = enemyPositions();
-        if (pos.length) {
-          var tgt = pos.reduce(function (a, c) {
-            return Math.hypot(ge[0] - c[0], ge[1] - c[1]) < Math.hypot(ge[0] - a[0], ge[1] - a[1]) ? c : a;
-          });
-          var tp = enToPolar(tgt[0] - fe[0], tgt[1] - fe[1]); var ts = proj(tp[0], tp[1]);
-          ctx.strokeStyle = "#ffd23b"; ctx.setLineDash([3, 2]);
-          ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(ts[0], ts[1]); ctx.stroke();
-          ctx.setLineDash([]);
-          var d = Math.hypot(ge[0] - tgt[0], ge[1] - tgt[1]);
-          ctx.fillStyle = "#ffd23b"; ctx.font = "bold 11px monospace";
-          ctx.fillText(d.toFixed(0), (s[0] + ts[0]) / 2, (s[1] + ts[1]) / 2 - 7);
-        }
-      }
-    });
+    if (state.game.revealed && state.game.result) {
+      state.game.result.pairs.forEach(function (p, i) {
+        var gp = enToPolar(p.guess[0] - fe[0], p.guess[1] - fe[1]); var s = proj(gp[0], gp[1]);
+        var tp = enToPolar(p.target[0] - fe[0], p.target[1] - fe[1]); var ts = proj(tp[0], tp[1]);
+        ctx.strokeStyle = "#ffd23b"; ctx.setLineDash([3, 2]);
+        ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(ts[0], ts[1]); ctx.stroke(); ctx.setLineDash([]);
+        drawX(s[0], s[1], p.pts >= 70 ? "#37d2da" : (p.pts >= 45 ? "#ffd23b" : "#ff6060"));
+        ctx.fillStyle = "#fff"; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
+        ctx.fillText(String(i + 1), s[0] + 8, s[1] - 8);
+        ctx.fillStyle = "#ffd23b";
+        ctx.fillText((p.d >= 10 ? p.d.toFixed(0) : p.d.toFixed(1)) + " nm", (s[0] + ts[0]) / 2, (s[1] + ts[1]) / 2 - 7);
+        ctx.textAlign = "center";
+      });
+    } else {
+      state.game.clicks.forEach(function (ge, i) {
+        var p = enToPolar(ge[0] - fe[0], ge[1] - fe[1]); var s = proj(p[0], p[1]);
+        drawX(s[0], s[1], "#fff");
+        ctx.fillStyle = "#fff"; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
+        ctx.fillText(String(i + 1), s[0] + 8, s[1] - 8); ctx.textAlign = "center";
+      });
+    }
   }
+}
+function drawX(x, y, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6);
+  ctx.moveTo(x - 6, y + 6); ctx.lineTo(x + 6, y - 6); ctx.stroke();
 }
 function tri(x1, y1, x2, y2, x3, y3) {
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3); ctx.closePath(); ctx.fill();
@@ -311,21 +316,80 @@ function onScopeTap(ev) {
   setStatus("Game: placed " + state.game.clicks.length + " of " + state.game.n);
   if (state.game.clicks.length === state.game.n) scoreGame();
 }
+/* one-to-one assignment: each guess matched to a distinct contact so you
+   can't stack three X's on one contact and score them all. */
+function permute(n, cb) {
+  var a = []; for (var i = 0; i < n; i++) a.push(i);
+  (function rec(k) {
+    if (k === n) { cb(a); return; }
+    for (var i = k; i < n; i++) { var t = a[k]; a[k] = a[i]; a[i] = t; rec(k + 1); t = a[k]; a[k] = a[i]; a[i] = t; }
+  })(0);
+}
+function bestAssignment(guesses, targets) {
+  var n = targets.length; if (n === 0) return [];
+  if (n <= 7 && guesses.length === n) {
+    var best = null, bestCost = Infinity;
+    permute(n, function (perm) {
+      var c = 0;
+      for (var i = 0; i < n; i++) { var g = guesses[perm[i]], t = targets[i]; c += Math.hypot(g[0] - t[0], g[1] - t[1]); }
+      if (c < bestCost) { bestCost = c; best = perm.slice(); }
+    });
+    return best;
+  }
+  var pairs = [];
+  for (var ti = 0; ti < n; ti++) for (var gj = 0; gj < guesses.length; gj++)
+    pairs.push([ti, gj, Math.hypot(targets[ti][0] - guesses[gj][0], targets[ti][1] - guesses[gj][1])]);
+  pairs.sort(function (a, b) { return a[2] - b[2]; });
+  var res = new Array(n).fill(0), td = {}, gd = {};
+  pairs.forEach(function (p) { if (td[p[0]] || gd[p[1]]) return; res[p[0]] = p[1]; td[p[0]] = 1; gd[p[1]] = 1; });
+  return res;
+}
+
+var session = { rounds: 0, points: 0, best: 0, streak: 0 };
+function pointsFor(d) { return Math.max(0, Math.round(100 - d * 2.5)); }   // 100 at 0 nm, 0 at 40 nm
+function rateWord(p) { return p >= 90 ? "DIRECT HIT" : p >= 70 ? "TALLY" : p >= 45 ? "CLOSE" : p >= 20 ? "LOOSE" : "LOST"; }
+function stars(a) { var k = Math.max(0, Math.min(5, Math.round(a / 20))); return "\u2605\u2605\u2605\u2605\u2605".slice(0, k) + "\u2606\u2606\u2606\u2606\u2606".slice(0, 5 - k); }
+function padR(s, n) { s = String(s); return s + " ".repeat(Math.max(1, n - s.length)); }
+
 function scoreGame() {
   if (!state.game) return;
-  var pos = enemyPositions(), total = 0;
-  state.game.clicks.forEach(function (ge) {
-    var best = Infinity;
-    pos.forEach(function (c) { best = Math.min(best, Math.hypot(ge[0] - c[0], ge[1] - c[1])); });
-    total += best;
+  var targets = enemyItems();
+  var tpos = targets.map(function (t) { return [t.e, t.n]; });
+  var assign = bestAssignment(state.game.clicks, tpos);
+  var pairs = [], total = 0;
+  targets.forEach(function (t, i) {
+    var g = state.game.clicks[assign[i]] || state.game.clicks[i] || [t.e, t.n];
+    var d = Math.hypot(g[0] - t.e, g[1] - t.n);
+    var pts = pointsFor(d); total += pts;
+    pairs.push({ guess: g, target: [t.e, t.n], d: d, pts: pts, name: t.name, rate: rateWord(pts) });
   });
-  var avg = state.game.clicks.length ? total / state.game.clicks.length : 0;
-  state.game.revealed = true;
-  state.enemiesShown = true;
+  var avg = targets.length ? total / targets.length : 0;
+  state.game.revealed = true; state.enemiesShown = true;
+  state.game.result = { pairs: pairs, total: total, avg: avg };
+
+  session.rounds++; session.points += total;
+  session.best = Math.max(session.best, Math.round(avg));
+  session.streak = avg >= 75 ? session.streak + 1 : 0;
+
   $("btnReveal").textContent = "Hide " + enemyWord();
   draw();
-  setOut("callOut", state.call.display + "\n\nGAME RESULT — average miss " + avg.toFixed(0) + " nm");
-  setStatus("Average miss " + avg.toFixed(0) + " nm — press Random for another.");
+
+  var L = ["  \u2588 ROUND COMPLETE \u2588   " + total + " pts   " + stars(avg), ""];
+  pairs.forEach(function (p, i) {
+    var nm = p.d >= 10 ? p.d.toFixed(0) : p.d.toFixed(1);
+    L.push("  " + padR((i + 1) + ". " + p.name, 18) + padR(nm + " nm", 9) + padR(p.rate, 12) + "+" + p.pts);
+  });
+  L.push("");
+  L.push("  ROUND AVERAGE:  " + Math.round(avg) + "/100");
+  L.push("  SESSION:  " + session.rounds + " rounds \u00b7 " + session.points + " pts \u00b7 best avg " +
+    session.best + (session.streak > 1 ? " \u00b7 streak " + session.streak + "\ud83d\udd25" : ""));
+  L.push("");
+  L.push("  \u2500\u2500 CALL \u2500\u2500");
+  L.push(state.call.display);
+  L.push("");
+  L.push("  Press \u201cRandom + Speak\u201d for the next picture.");
+  setOut("callOut", L.join("\n"));
+  setStatus(total + " pts \u00b7 avg " + Math.round(avg) + " \u00b7 " + stars(avg));
 }
 
 /* ===================================================================
