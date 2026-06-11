@@ -159,9 +159,9 @@ function buildCall(pic, callsign, opts) {
    ================================================================= */
 var SAM_RANGES = { "SA-2": 22, "SA-3": 15, "SA-6": 14, "SA-8": 6, "SA-10": 40, "SA-11": 18, "SA-15": 7, "SA-19": 5, "ZSU-23": 2 };
 var SAM_LIST = Object.keys(SAM_RANGES);
-var SEAD_STATUS = ["SEARCH", "SEARCH", "TRACK", "TRACK", "LAUNCH"];
-var SEAD_VERB = { SEARCH: "MUD", TRACK: "SPIKE", LAUNCH: "SINGER" };
-var SEAD_COLOR = { SEARCH: "#ffd23b", TRACK: "#ff9a3c", LAUNCH: "#ff4040" };
+var SEAD_STATUS = ["LAST KNOWN", "LAST KNOWN", "LAST KNOWN", "AWAKE", "ACTIVE"];
+var SEAD_VERB = { "LAST KNOWN": "", AWAKE: "AWAKE", ACTIVE: "ACTIVE" };
+var SEAD_COLOR = { "LAST KNOWN": "#ffd23b", AWAKE: "#ff9a3c", ACTIVE: "#ff4040" };
 
 function saySam(t) {
   return t.split("-").map(function (p) { return /^[A-Za-z]+$/.test(p) ? p.split("").join(" ") : p; }).join(" ");
@@ -191,15 +191,16 @@ function clockOf(fighterEn, hdg, e, n) {
   var rel = ((los - hdg) % 360 + 360) % 360, c = Math.round(rel / 30) % 12;
   return c === 0 ? 12 : c;
 }
-function buildSeadCall(sead, callsign, fighterHdg) {
+function buildSeadCall(sead, callsign) {
   var n = sead.threats.length, lead = callsign ? callsign + ", " : "";
-  var head = lead + n + " SURFACE THREAT" + (n !== 1 ? "S" : "");
-  var disp = [head + ":"], sp = [head + "."];
+  var head = lead + "SAM PICTURE, LAST KNOWN \u2014 " + n + " SURFACE THREAT" + (n !== 1 ? "S" : "");
+  var disp = [head + ":"];
+  var sp = [lead + "S A M picture, last known. " + n + " surface threat" + (n !== 1 ? "s" : "") + "."];
   sead.threats.forEach(function (t) {
-    var verb = SEAD_VERB[t.status], clk = clockOf(sead.fighterEn, fighterHdg, t.e, t.n);
-    var def = t.status === "LAUNCH" ? " — DEFEND" : "";
-    disp.push("   " + verb + " " + t.sam + ", BULLSEYE " + pad3(t.beBrg) + "/" + Math.round(t.beRng) + ", " + clk + " o'clock" + def + ".");
-    sp.push(verb + " " + saySam(t.sam) + ", bullseye " + spokenBearing(t.beBrg) + ", " + Math.round(t.beRng) + ", " + clk + " o'clock" + (t.status === "LAUNCH" ? ", defend" : "") + ".");
+    var tag = t.status !== "LAST KNOWN" ? ", " + t.status : "";
+    disp.push("   " + t.sam + ", BULLSEYE " + pad3(t.beBrg) + "/" + Math.round(t.beRng) + tag + ".");
+    sp.push(saySam(t.sam) + ", bullseye " + spokenBearing(t.beBrg) + ", " + Math.round(t.beRng) +
+            (t.status !== "LAST KNOWN" ? ", " + t.status.toLowerCase() : "") + ".");
   });
   return { display: disp.join("\n"), speech: sp.join("  ") };
 }
@@ -286,7 +287,23 @@ function speakNineLine(d) {
     "Remarks, final attack heading " + sayDigits(pad3(d.fah[0])) + " to " + sayDigits(pad3(d.fah[1])) + dc + ". Cleared hot at my command."
   ].join("  ");
 }
-
+/* Paced 9-line: speaks ONLY the data for each line (no field labels, no
+   "Line N") with a brief pause between each. */
+function speakNineLinePaced(d) {
+  var off = d.offset ? ", offset " + d.offset : "";
+  var mark = d.mark + (d.code ? ", code " + sayDigits(d.code) : "");
+  return [
+    d.ip + ".",
+    sayDigits(pad3(d.heading)) + off + ".",
+    sayDecimal(d.dist) + ".",
+    d.elev + ".",
+    d.desc + ".",
+    sayGrid(d.grid) + ".",
+    mark + ".",
+    DIRW[d.fdir] + " " + fdistSpeech(d.fdistM) + ".",
+    d.egress + "."
+  ].join("  ");
+}
 var FLIGHTS = ["Hawg", "Uzi", "Viper", "Hammer", "Colt", "Dude", "Raven", "Tusk"];
 var JTAC_CS = ["Warhawk", "Dusty", "Talon", "Saber", "Sentry", "Ranger", "Gunfighter"];
 var AC = ["F/A-18C Hornets", "F-35C Lightnings", "F-16C Vipers", "A-10C Warthogs"];
@@ -333,7 +350,7 @@ function buildCasSteps(m) {
     { n: 3, title: "GAME PLAN", who: "JTAC",
       call: flt + ", " + jtac + ", game plan: Type " + m.ctype + " control, " + m.method + ". How copy?",
       response: flt + ": copy game plan, ready to copy 9-line." },
-    { n: 4, title: "9-LINE", who: "JTAC", call: nineDisp, speech: nineSpeech,
+    { n: 4, title: "9-LINE", who: "JTAC", call: nineDisp, speech: speakNineLinePaced(m),
       response: flt + ": ready to copy — will read back lines 4 and 6." },
     { n: 5, title: "REMARKS & RESTRICTIONS", who: "JTAC", call: remarksDisp, speech: remarksSpeech,
       response: flt + ": copy remarks." },
